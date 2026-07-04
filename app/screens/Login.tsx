@@ -1,7 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
 import { Image, ImageBackground, StyleSheet, Text, View, TextInput, TouchableOpacity } from 'react-native';
+import { NavigationProp, useNavigation } from '@react-navigation/native';
 
 export default function Login() {
+  const navigation = useNavigation<NavigationProp<Record<string, object | undefined>>>();
+
+  const handleLogin = () => {
+    navigation.navigate('HomeTabs'); // Navega para a tela "Cultivo" após o login
+  };
+
   return (
     <ImageBackground
       source={require('../../assets/images/CultiveBackgroud.png')}
@@ -22,7 +29,7 @@ export default function Login() {
 
               <TextInput style={styles.input_senha} secureTextEntry={true} placeholder="Senha"></TextInput>
             
-            <TouchableOpacity style={styles.button_entrar}>
+            <TouchableOpacity style={styles.button_entrar} onPress={handleLogin}>
               <Text style={{ color: '#fff', fontSize: 16 }}>Entrar no Sistema</Text>
             </TouchableOpacity>
 
