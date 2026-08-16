@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Cultive-Mobile",
+    "name": "Cultive+ Mobile",
     "slug": "Cultive-Mobile",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -28,7 +28,17 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-router"
-    ]
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Cultive+ usa suas fotos para anexar registros visuais às tarefas de campo.",
+          "cameraPermission": "O Cultive+ usa a câmera para registrar fotos das tarefas realizadas no campo."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://192.168.0.100:8090/api"
+    }
   }
 }

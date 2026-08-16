@@ -6,7 +6,7 @@ import Estoque from '../screens/post_login/tabs/estoque_tab';
 import Tarefas from '../screens/post_login/tabs/tarefas_tab';
 import Relatorios from '../screens/post_login/tabs/relatorios_tab';
 import Perfil from '../screens/post_login/tabs/perfil_tab';
-import { Warehouse, Box, CheckSquare, BarChart3, User, Wheat } from 'lucide-react-native';
+import { Warehouse, Box, CheckSquare, BarChart3, User, Wheat, UserRound } from 'lucide-react-native';
 
 const Tab = createBottomTabNavigator();
 
@@ -59,7 +59,7 @@ export default function TabRoutes() {
             case 'Relatorios':
               return <BarChart3 size={iconSize} color={color} />;
             case 'Perfil':
-              return <User size={iconSize} color={color} />;
+              return <UserRound size={iconSize} color={color} />;
             default:
               return null;
           }
