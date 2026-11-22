@@ -67,8 +67,11 @@ async function enviarItem(token: string, item: ItemOutbox): Promise<void> {
     case 'tarefa.concluir': {
       const payload = lerPayload<PayloadTarefa>(item);
       const atualizada = await cultiveApi.concluirTarefa(token, item.entidadeId, payload);
-      await tarefaRepo.salvarDoServidor(atualizada);
+      // Marca como sincronizada ANTES de salvar: só assim o upsert protegido
+      // (que só sobrescreve linhas com sync_status = 'synced') aplica os
+      // campos que o servidor pode ter recalculado (ex.: foi para observação).
       await tarefaRepo.marcarSincronizada(item.entidadeId);
+      await tarefaRepo.salvarDoServidor(atualizada);
       return;
     }
 
@@ -79,16 +82,16 @@ async function enviarItem(token: string, item: ItemOutbox): Promise<void> {
         item.entidadeId,
         payload
       );
-      await tarefaRepo.salvarDoServidor(atualizada);
       await tarefaRepo.marcarSincronizada(item.entidadeId);
+      await tarefaRepo.salvarDoServidor(atualizada);
       return;
     }
 
     case 'cultivo.status': {
       const payload = lerPayload<PayloadCultivo>(item);
       const atualizado = await cultiveApi.atualizarStatusCultivo(token, item.entidadeId, payload);
-      await cultivoRepo.salvarDoServidor(atualizado);
       await cultivoRepo.marcarSincronizado(item.entidadeId);
+      await cultivoRepo.salvarDoServidor(atualizado);
       return;
     }
 
@@ -107,8 +110,8 @@ async function enviarItem(token: string, item: ItemOutbox): Promise<void> {
       const local = await estoqueRepo.buscarPorId(item.entidadeId);
       if (!local) return;
       const atualizado = await cultiveApi.atualizarItemEstoque(token, local);
-      await estoqueRepo.salvarDoServidor(atualizado);
       await estoqueRepo.marcarSincronizado(item.entidadeId);
+      await estoqueRepo.salvarDoServidor(atualizado);
       return;
     }
 

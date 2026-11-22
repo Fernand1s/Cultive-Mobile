@@ -31,7 +31,7 @@ export const ehErroDeRede = (erro: unknown): boolean => erro instanceof ErroRede
 
 /** Erro definitivo do servidor (4xx, exceto 401): reenviar não vai adiantar. */
 export const ehErroPermanente = (erro: unknown): boolean =>
-  erro instanceof ErroApi && erro.status >= 400 && erro.status < 500 && erro.status !== 401;
+  erro instanceof ErroApi && erro.status >= 400 && erro.status !== 401;
 
 type Metodo = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 

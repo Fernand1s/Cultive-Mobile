@@ -35,7 +35,8 @@
           "photosPermission": "O Cultive+ usa suas fotos para anexar registros visuais às tarefas de campo.",
           "cameraPermission": "O Cultive+ usa a câmera para registrar fotos das tarefas realizadas no campo."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "apiUrl": "http://192.168.0.100:8090/api"
