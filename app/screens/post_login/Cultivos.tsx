@@ -98,7 +98,14 @@ function CartaoCultivo({
         <Etiqueta texto="Aguardando envio" tom="azul" />
       )}
       {cultivo.syncStatus === 'error' && (
-        <Etiqueta texto="Falha ao enviar — revise" tom="vermelho" />
+        <View style={estilos.acoes}>
+          <Etiqueta texto="Falha ao enviar" tom="vermelho" />
+          <Botao
+            titulo="Revisar envio"
+            variante="secundario"
+            aoPressionar={() => aoAtualizar(cultivo)}
+          />
+        </View>
       )}
 
       <View style={estilos.infos}>

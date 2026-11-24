@@ -138,6 +138,7 @@ export function useAtualizarStatusCultivo() {
         quantidadePlantada: cultivo.quantidadePlantada,
         idPlanta: cultivo.idPlanta,
         idArea: cultivo.idArea,
+        dataPlantio: cultivo.dataPlantio,
       });
     },
     onSuccess: async () => {
@@ -199,9 +200,9 @@ export function useExcluirItemEstoque() {
 
   return useMutation({
     mutationFn: async (item: ItemEstoque) => {
-      // Item criado offline e ainda não enviado: some sem deixar rastro na fila.
+      // Mantém o ID temporário reservado até a fila processar o cancelamento.
       if (item.idEstoque < 0) {
-        await estoqueRepo.excluirLocal(item.idEstoque);
+        await outboxRepo.enfileirar('estoque', item.idEstoque, 'estoque.excluir', {});
         return;
       }
       await estoqueRepo.excluirLocal(item.idEstoque);

@@ -220,8 +220,9 @@ export const cultiveApi = {
       estadoPlanta: EstadoPlanta;
       observacaoCultivo: string | null;
       quantidadePlantada: number;
-      idPlanta: number | null;
-      idArea: number | null;
+      idPlanta: number;
+      idArea: number;
+      dataPlantio: string;
     }
   ): Promise<Cultivo> {
     const resposta = await requisitar<CultivoApi>(`/cultivos/${idCultivo}`, {
@@ -230,6 +231,7 @@ export const cultiveApi = {
       corpo: {
         idPlanta: dados.idPlanta,
         idArea: dados.idArea,
+        dataPlantio: dados.dataPlantio,
         statusCultivo: dados.statusCultivo,
         estadoPlanta: dados.estadoPlanta,
         observacaoCultivo: dados.observacaoCultivo ?? '',

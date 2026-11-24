@@ -1,7 +1,7 @@
 import { areaRepo, plantaRepo, relatorioCacheRepo } from '../database/repositories/catalogoRepo';
 import { cultivoRepo } from '../database/repositories/cultivoRepo';
 import { estoqueRepo } from '../database/repositories/estoqueRepo';
-import { outboxRepo } from '../database/repositories/outboxRepo';
+import { MAX_TENTATIVAS, outboxRepo } from '../database/repositories/outboxRepo';
 import { tarefaRepo } from '../database/repositories/tarefaRepo';
 import { syncMetaRepo, usuarioRepo } from '../database/repositories/usuarioRepo';
 import type {
@@ -11,7 +11,7 @@ import type {
   StatusCultivo,
   Usuario,
 } from '../database/types';
-import { ehErroDeRede, ehErroPermanente } from '../services/api';
+import { devePausarReenvio, ehErroDeRede, ErroApi } from '../services/api';
 import { cultiveApi } from '../services/cultiveApi';
 
 /**
@@ -60,9 +60,11 @@ interface PayloadCultivo {
   quantidadePlantada: number;
   idPlanta: number | null;
   idArea: number | null;
+  dataPlantio?: string | null;
 }
 
-async function enviarItem(token: string, item: ItemOutbox): Promise<void> {
+/** Retorna false quando a operação pôde ser descartada sem envio. */
+async function enviarItem(token: string, item: ItemOutbox): Promise<boolean> {
   switch (item.operacao) {
     case 'tarefa.concluir': {
       const payload = lerPayload<PayloadTarefa>(item);
@@ -72,7 +74,7 @@ async function enviarItem(token: string, item: ItemOutbox): Promise<void> {
       // campos que o servidor pode ter recalculado (ex.: foi para observação).
       await tarefaRepo.marcarSincronizada(item.entidadeId);
       await tarefaRepo.salvarDoServidor(atualizada);
-      return;
+      return true;
     }
 
     case 'tarefa.observacao': {
@@ -84,41 +86,64 @@ async function enviarItem(token: string, item: ItemOutbox): Promise<void> {
       );
       await tarefaRepo.marcarSincronizada(item.entidadeId);
       await tarefaRepo.salvarDoServidor(atualizada);
-      return;
+      return true;
     }
 
     case 'cultivo.status': {
       const payload = lerPayload<PayloadCultivo>(item);
-      const atualizado = await cultiveApi.atualizarStatusCultivo(token, item.entidadeId, payload);
+      // Pendências gravadas antes da correção não incluem a data de plantio.
+      const local =
+        payload.dataPlantio && payload.idPlanta && payload.idArea
+          ? null
+          : await cultivoRepo.buscarPorId(item.entidadeId);
+      const dataPlantio = payload.dataPlantio || local?.dataPlantio;
+      const idPlanta = payload.idPlanta ?? local?.idPlanta;
+      const idArea = payload.idArea ?? local?.idArea;
+      if (!dataPlantio || !idPlanta || !idArea) {
+        throw new Error('O cultivo precisa de data de plantio, planta e área para ser enviado.');
+      }
+      const atualizado = await cultiveApi.atualizarStatusCultivo(token, item.entidadeId, {
+        ...payload,
+        dataPlantio,
+        idPlanta,
+        idArea,
+      });
       await cultivoRepo.marcarSincronizado(item.entidadeId);
       await cultivoRepo.salvarDoServidor(atualizado);
-      return;
+      return true;
     }
 
     case 'estoque.criar': {
       const local = await estoqueRepo.buscarPorId(item.entidadeId);
-      if (!local) return;
+      if (!local || (await outboxRepo.estoqueTemExclusao(item.entidadeId))) return false;
       const criado = await cultiveApi.criarItemEstoque(token, local);
       // Troca o id temporário negativo pelo id real gerado no servidor.
       await estoqueRepo.trocarId(item.entidadeId, criado.idEstoque);
       await outboxRepo.reconciliarId(item.entidadeId, criado.idEstoque);
       await estoqueRepo.salvarDoServidor(criado);
-      return;
+      return true;
     }
 
     case 'estoque.atualizar': {
+      if (await outboxRepo.estoqueTemExclusao(item.entidadeId)) return false;
       const local = await estoqueRepo.buscarPorId(item.entidadeId);
-      if (!local) return;
+      if (!local) throw new Error('O item de estoque não está disponível no banco local.');
+      if (item.entidadeId < 0) throw new Error('A edição aguarda o cadastro do item de estoque.');
       const atualizado = await cultiveApi.atualizarItemEstoque(token, local);
       await estoqueRepo.marcarSincronizado(item.entidadeId);
       await estoqueRepo.salvarDoServidor(atualizado);
-      return;
+      return true;
     }
 
     case 'estoque.excluir': {
+      if (item.entidadeId < 0) {
+        await estoqueRepo.excluirLocal(item.entidadeId);
+        await outboxRepo.cancelarEnviosEstoque(item.entidadeId);
+        return false;
+      }
       await cultiveApi.excluirItemEstoque(token, item.entidadeId);
       await estoqueRepo.excluirLocal(item.entidadeId);
-      return;
+      return true;
     }
 
     default:
@@ -132,35 +157,43 @@ async function marcarEntidadeComErro(item: ItemOutbox): Promise<void> {
   if (item.entidade === 'cultivo') await cultivoRepo.marcarErro(item.entidadeId);
 }
 
-export async function enviarPendencias(token: string): Promise<{ enviados: number; falhas: number }> {
+export async function enviarPendencias(
+  token: string
+): Promise<Pick<ResultadoSync, 'enviados' | 'falhas' | 'erro'>> {
   const pendentes = await outboxRepo.pendentes();
   let enviados = 0;
   let falhas = 0;
+  let ultimoErro: string | null = null;
 
-  for (const item of pendentes) {
+  for (const pendente of pendentes) {
+    // Um cadastro anterior do estoque pode ter substituído o ID temporário.
+    const item = await outboxRepo.buscarPorId(pendente.id);
+    if (!item) continue;
     try {
-      await enviarItem(token, item);
+      const enviado = await enviarItem(token, item);
       await outboxRepo.remover(item.id);
-      enviados += 1;
+      if (enviado) enviados += 1;
     } catch (erro) {
       if (ehErroDeRede(erro)) {
         // Conexão caiu no meio: para por aqui e tenta tudo de novo depois.
+        ultimoErro = 'Sem conexão com o servidor.';
         break;
       }
 
-      const mensagem = erro instanceof Error ? erro.message : 'Erro desconhecido';
-      await outboxRepo.registrarFalha(item.id, mensagem);
+      const detalhe = erro instanceof Error ? erro.message : 'Erro desconhecido';
+      const mensagem = erro instanceof ErroApi ? `HTTP ${erro.status}: ${detalhe}` : detalhe;
+      const pausar = devePausarReenvio(erro);
+      await outboxRepo.registrarFalha(item.id, mensagem, pausar);
+      ultimoErro = mensagem;
       falhas += 1;
 
-      if (ehErroPermanente(erro)) {
-        // O servidor recusou de forma definitiva: sinaliza na tela e segue.
+      if (pausar || item.tentativas + 1 >= MAX_TENTATIVAS) {
         await marcarEntidadeComErro(item);
-        await outboxRepo.remover(item.id);
       }
     }
   }
 
-  return { enviados, falhas };
+  return { enviados, falhas, erro: ultimoErro };
 }
 
 // ---------------------------------------------------------------------------
@@ -194,19 +227,17 @@ export async function baixarDados(token: string, usuario: Usuario): Promise<void
     await usuarioRepo.salvar(usuario);
   }
 
-  // Relatórios: cada um é independente, uma falha não derruba os demais.
-  await Promise.all(
+  // Uma falha mantém o cache anterior do relatório e não impede os demais.
+  const relatorios = await Promise.allSettled(
     RELATORIOS_OFFLINE.map(async ({ chave, caminho }) => {
-      try {
-        const dados = await cultiveApi.obterRelatorio(token, caminho);
-        await relatorioCacheRepo.salvar(chave, dados);
-      } catch {
-        // Mantém o cache anterior deste relatório.
-      }
+      const dados = await cultiveApi.obterRelatorio(token, caminho);
+      await relatorioCacheRepo.salvar(chave, dados);
     })
   );
 
-  await syncMetaRepo.registrar('relatorio', 'cache atualizado');
+  if (relatorios.every((relatorio) => relatorio.status === 'fulfilled')) {
+    await syncMetaRepo.registrar('relatorio', 'cache atualizado');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +251,7 @@ export async function sincronizar(token: string, usuario: Usuario): Promise<Resu
     const envio = await enviarPendencias(token);
     resultado.enviados = envio.enviados;
     resultado.falhas = envio.falhas;
+    resultado.erro = envio.erro;
 
     await baixarDados(token, usuario);
     resultado.baixou = true;

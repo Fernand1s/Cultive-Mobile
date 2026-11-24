@@ -30,8 +30,7 @@ export const outboxRepo = {
   /**
    * Enfileira uma mutação feita no dispositivo.
    *
-   * Operações idempotentes sobre o mesmo registro (ex.: concluir a mesma tarefa
-   * duas vezes) substituem a entrada anterior, evitando fila duplicada.
+   * A operação mais recente do mesmo tipo substitui a entrada anterior do registro.
    */
   async enfileirar(
     entidade: EntidadeSincronizavel,
@@ -61,6 +60,27 @@ export const outboxRepo = {
     return linhas.map(mapear);
   },
 
+  async listar(): Promise<ItemOutbox[]> {
+    const db = await obterBanco();
+    const linhas = await db.getAllAsync<LinhaOutbox>('SELECT * FROM outbox ORDER BY id ASC');
+    return linhas.map(mapear);
+  },
+
+  async buscarPorId(id: number): Promise<ItemOutbox | null> {
+    const db = await obterBanco();
+    const linha = await db.getFirstAsync<LinhaOutbox>('SELECT * FROM outbox WHERE id = ?', [id]);
+    return linha ? mapear(linha) : null;
+  },
+
+  async estoqueTemExclusao(idEstoque: number): Promise<boolean> {
+    const db = await obterBanco();
+    const linha = await db.getFirstAsync<{ id: number }>(
+      "SELECT id FROM outbox WHERE entidade = 'estoque' AND entidade_id = ? AND operacao = 'estoque.excluir' LIMIT 1",
+      [idEstoque]
+    );
+    return linha !== null;
+  },
+
   async contarPendentes(): Promise<number> {
     const db = await obterBanco();
     const linha = await db.getFirstAsync<{ total: number }>(
@@ -74,11 +94,11 @@ export const outboxRepo = {
     await db.runAsync('DELETE FROM outbox WHERE id = ?', [id]);
   },
 
-  async registrarFalha(id: number, erro: string): Promise<void> {
+  async registrarFalha(id: number, erro: string, pausar: boolean): Promise<void> {
     const db = await obterBanco();
     await db.runAsync(
-      'UPDATE outbox SET tentativas = tentativas + 1, ultimo_erro = ? WHERE id = ?',
-      [erro.slice(0, 500), id]
+      'UPDATE outbox SET tentativas = MAX(tentativas + 1, ?), ultimo_erro = ? WHERE id = ?',
+      [pausar ? MAX_TENTATIVAS : 0, erro.slice(0, 500), id]
     );
   },
 
@@ -88,9 +108,16 @@ export const outboxRepo = {
    */
   async reconciliarId(idTemporario: number, idReal: number): Promise<void> {
     const db = await obterBanco();
-    await db.runAsync('UPDATE outbox SET entidade_id = ? WHERE entidade_id = ?', [
-      idReal,
-      idTemporario,
+    await db.runAsync(
+      "UPDATE outbox SET entidade_id = ? WHERE entidade = 'estoque' AND entidade_id = ?",
+      [idReal, idTemporario]
+    );
+  },
+
+  async cancelarEnviosEstoque(idEstoque: number): Promise<void> {
+    const db = await obterBanco();
+    await db.runAsync("DELETE FROM outbox WHERE entidade = 'estoque' AND entidade_id = ?", [
+      idEstoque,
     ]);
   },
 

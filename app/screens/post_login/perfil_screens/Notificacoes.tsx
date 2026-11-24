@@ -5,7 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { TelaInterna } from '../../../../components/TelaInterna';
 import { Botao, Cartao, EstadoVazio, Etiqueta } from '../../../../components/ui';
 import { useSync } from '../../../../contexts/SyncContext';
-import { outboxRepo } from '../../../../database/repositories/outboxRepo';
+import { MAX_TENTATIVAS, outboxRepo } from '../../../../database/repositories/outboxRepo';
 import type { ItemOutbox } from '../../../../database/types';
 import { cores, espacamento, fonte } from '../../../../theme';
 
@@ -28,12 +28,12 @@ export default function Notificacoes() {
   const [fila, setFila] = useState<ItemOutbox[]>([]);
 
   const carregar = useCallback(async () => {
-    setFila(await outboxRepo.pendentes());
+    setFila(await outboxRepo.listar());
   }, []);
 
   useEffect(() => {
     void carregar();
-  }, [carregar, pendentes]);
+  }, [carregar, pendentes, sincronizando]);
 
   return (
     <TelaInterna titulo="Notificações" subtitulo="O que está esperando para subir ao sistema.">
@@ -75,6 +75,8 @@ export default function Notificacoes() {
       ) : (
         fila.map((item) => {
           const comFalha = item.tentativas > 0;
+          const pausado = item.tentativas >= MAX_TENTATIVAS;
+          const rotulo = pausado ? 'Envio interrompido' : comFalha ? `${item.tentativas} tentativa(s)` : 'Na fila';
           return (
             <Cartao key={item.id} style={estilos.item}>
               <View style={estilos.itemCabecalho}>
@@ -82,8 +84,8 @@ export default function Notificacoes() {
                   {DESCRICAO_OPERACAO[item.operacao] ?? item.operacao}
                 </Text>
                 <Etiqueta
-                  texto={comFalha ? `${item.tentativas} tentativa(s)` : 'Na fila'}
-                  tom={comFalha ? 'ambar' : 'azul'}
+                  texto={rotulo}
+                  tom={pausado ? 'vermelho' : comFalha ? 'ambar' : 'azul'}
                   icone={
                     comFalha ? (
                       <AlertTriangle size={12} color="#B45309" />

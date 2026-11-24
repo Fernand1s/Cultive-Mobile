@@ -29,8 +29,8 @@ export class ErroApi extends Error {
 /** Erro de rede: vale a pena tentar novamente mais tarde. */
 export const ehErroDeRede = (erro: unknown): boolean => erro instanceof ErroRede;
 
-/** Erro definitivo do servidor (4xx, exceto 401): reenviar não vai adiantar. */
-export const ehErroPermanente = (erro: unknown): boolean =>
+/** Pausa o reenvio quando a API recusa a operação ou o resultado é incerto (5xx). */
+export const devePausarReenvio = (erro: unknown): boolean =>
   erro instanceof ErroApi && erro.status >= 400 && erro.status !== 401;
 
 type Metodo = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

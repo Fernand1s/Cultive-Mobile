@@ -111,6 +111,11 @@ const ATUALIZACAO_CONFLITO = `
   compatibilidade_potencia = excluded.compatibilidade_potencia,
   sync_status = excluded.sync_status, atualizado_em = excluded.atualizado_em`;
 
+const SEM_EXCLUSAO_PENDENTE = `NOT EXISTS (
+  SELECT 1 FROM outbox
+  WHERE entidade = 'estoque' AND entidade_id = estoque.id_estoque AND operacao = 'estoque.excluir'
+)`;
+
 export const estoqueRepo = {
   async salvarDoServidor(item: ItemEstoque): Promise<void> {
     const db = await obterBanco();
@@ -145,7 +150,7 @@ export const estoqueRepo = {
   async listar(): Promise<ItemEstoque[]> {
     const db = await obterBanco();
     const linhas = await db.getAllAsync<LinhaEstoque>(
-      'SELECT * FROM estoque ORDER BY nome COLLATE NOCASE ASC'
+      `SELECT * FROM estoque WHERE ${SEM_EXCLUSAO_PENDENTE} ORDER BY nome COLLATE NOCASE ASC`
     );
     return linhas.map(mapear);
   },
@@ -166,7 +171,11 @@ export const estoqueRepo = {
   async proximoIdTemporario(): Promise<number> {
     const db = await obterBanco();
     const linha = await db.getFirstAsync<{ menor: number | null }>(
-      'SELECT MIN(id_estoque) AS menor FROM estoque'
+      `SELECT MIN(id) AS menor FROM (
+         SELECT id_estoque AS id FROM estoque WHERE id_estoque < 0
+         UNION ALL
+         SELECT entidade_id AS id FROM outbox WHERE entidade = 'estoque' AND entidade_id < 0
+       )`
     );
     const menor = linha?.menor ?? 0;
     return menor < 0 ? menor - 1 : -1;
@@ -214,11 +223,13 @@ export const estoqueRepo = {
   async opcoesDeFiltro(): Promise<{ categorias: string[]; subcategorias: string[] }> {
     const db = await obterBanco();
     const cats = await db.getAllAsync<{ valor: string }>(
-      'SELECT DISTINCT categoria AS valor FROM estoque WHERE categoria IS NOT NULL ORDER BY valor'
+      `SELECT DISTINCT categoria AS valor FROM estoque
+       WHERE categoria IS NOT NULL AND ${SEM_EXCLUSAO_PENDENTE} ORDER BY valor`
     );
     // Aspas simples são obrigatórias: no SQLite, "" seria um identificador vazio.
     const subs = await db.getAllAsync<{ valor: string }>(
-      "SELECT DISTINCT subcategoria AS valor FROM estoque WHERE subcategoria IS NOT NULL AND subcategoria <> '' ORDER BY valor"
+      `SELECT DISTINCT subcategoria AS valor FROM estoque
+       WHERE subcategoria IS NOT NULL AND subcategoria <> '' AND ${SEM_EXCLUSAO_PENDENTE} ORDER BY valor`
     );
     return {
       categorias: cats.map((c) => c.valor),

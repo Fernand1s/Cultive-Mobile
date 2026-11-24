@@ -34,6 +34,13 @@ import { cores, espacamento, fonte, raio } from '../../../theme';
 
 type TopicoRelatorio = 'PRODUCAO' | 'FITOSSANITARIO' | 'ESTOQUE' | 'OCUPACAO';
 
+const CHAVE_RELATORIO: Record<TopicoRelatorio, string> = {
+  PRODUCAO: 'produtividade',
+  FITOSSANITARIO: 'incidencia-pragas',
+  ESTOQUE: 'alertas-estoque',
+  OCUPACAO: 'ocupacao-areas',
+};
+
 interface Produtividade {
   idCultivo: number;
   nomePlanta: string | null;
@@ -142,7 +149,7 @@ function SemDados({ topico }: { topico: string }) {
 // ---------------------------------------------------------------------------
 
 function AbaProducao() {
-  const { data } = useRelatorio<Produtividade[]>('produtividade');
+  const { data } = useRelatorio<Produtividade[]>(CHAVE_RELATORIO.PRODUCAO);
   const registros = data?.dados ?? [];
 
   const porArea = useMemo(() => {
@@ -208,7 +215,7 @@ function AbaProducao() {
 }
 
 function AbaFitossanitario() {
-  const { data } = useRelatorio<IncidenciaPraga[]>('incidencia-pragas');
+  const { data } = useRelatorio<IncidenciaPraga[]>(CHAVE_RELATORIO.FITOSSANITARIO);
   const registros = data?.dados ?? [];
 
   if (registros.length === 0) return <SemDados topico="ocorrências fitossanitárias" />;
@@ -252,8 +259,10 @@ function AbaFitossanitario() {
 }
 
 function AbaEstoque() {
-  const { data } = useRelatorio<AlertaEstoque[]>('alertas-estoque');
+  const { data } = useRelatorio<AlertaEstoque[]>(CHAVE_RELATORIO.ESTOQUE);
   const registros = data?.dados ?? [];
+
+  if (!data) return <SemDados topico="alertas de estoque" />;
 
   if (registros.length === 0) {
     return (
@@ -306,7 +315,7 @@ function AbaEstoque() {
 }
 
 function AbaOcupacao() {
-  const { data } = useRelatorio<OcupacaoArea[]>('ocupacao-areas');
+  const { data } = useRelatorio<OcupacaoArea[]>(CHAVE_RELATORIO.OCUPACAO);
   const registros = data?.dados ?? [];
 
   if (registros.length === 0) return <SemDados topico="ocupação de áreas" />;
@@ -346,7 +355,8 @@ function AbaOcupacao() {
 
 export default function Relatorios() {
   const [aba, setAba] = useState<TopicoRelatorio>('PRODUCAO');
-  const { sincronizarAgora, sincronizando, ultimaSync } = useSync();
+  const { sincronizarAgora, sincronizando } = useSync();
+  const { data: relatorioAtual } = useRelatorio(CHAVE_RELATORIO[aba]);
 
   return (
     <SafeAreaView style={estilos.tela} edges={['top']}>
@@ -415,9 +425,9 @@ export default function Relatorios() {
         {aba === 'ESTOQUE' && <AbaEstoque />}
         {aba === 'OCUPACAO' && <AbaOcupacao />}
 
-        {ultimaSync && (
+        {relatorioAtual && (
           <Text style={estilos.rodapeSync}>
-            Dados de {new Date(ultimaSync).toLocaleString('pt-BR')}
+            Dados de {new Date(relatorioAtual.atualizadoEm).toLocaleString('pt-BR')}
           </Text>
         )}
       </ScrollView>
